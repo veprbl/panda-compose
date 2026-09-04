@@ -143,6 +143,8 @@ services:
       https_proxy: ${HTTPS_PROXY:-}
       # JEDI specific
       PANDA_RUCIO_ACCOUNT: ${PANDA_RUCIO_ACCOUNT:-root}
+      # Required for LiveConfigParser ${PANDA_HOME} expansion in panda_jedi.cfg
+      PANDA_HOME: /opt/panda
     volumes:
       - ./config/panda/panda_common.cfg:/etc/panda/panda_common.cfg:ro
       - ./config/panda/panda_server.cfg:/etc/panda/panda_server.cfg:ro
