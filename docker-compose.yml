@@ -85,11 +85,13 @@ services:
           ln -sf /opt/panda/sandbox/panda_server-httpd.conf /opt/panda/etc/panda/panda_server-httpd.conf
         fi
         /opt/panda/bin/python /data/panda/process_template.py
+        # Also process the httpd config directly since it's not a .template file
+        /opt/panda/bin/python -c "import os, re; content=open('/opt/panda/sandbox/panda_server-httpd.conf').read(); [content.__setitem__('dummy', content.replace('$${'+k+'}',v)) or None for k,v in os.environ.items() if k.startswith('PANDA_SERVER_CONF_')]; open('/opt/panda/etc/panda/panda_server-httpd.conf','w').write(content)"
         # Remove stale lock files left by a previous container run (the writable
         # layer is reused across restarts so these files persist).
-        rm -f ${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.lock \
-              ${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.pid \
-              ${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.pid.lock
+        rm -f $${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.lock \
+              $${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.pid \
+              $${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.pid.lock
         /data/panda/run-panda-services
         # Start JEDI in background (same container, same pandaserver package)
         /data/panda/init-jedi
@@ -216,12 +218,12 @@ services:
       - /bin/bash
       - -c
       - |
-        source /opt/harvester/bin/activate
-        pip install -q 'docker==7.1.0'
-        mkdir -p /var/log/harvester /var/run/panda /harvester/workers
-        python -u $$SITE_PACKAGES_PATH/pandaharvester/harvesterbody/master.py --foreground &
-        echo $$! > /var/run/panda/panda_harvester.pid
-        wait
+        dnf install -y python3.11 python3.11-libs python3.11-devel sqlite-devel
+        cp /usr/lib64/python3.11/lib-dynload/_sqlite3.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/lib-dynload/
+        pip install -q 'docker==7.1.0' 'rucio-clients' 'apsw'
+        mkdir -p /var/log/harvester /var/run/panda /harvester/workers /var/lib/panda
+        PYTHONPATH=/opt/harvester/lib/python3.11/site-packages:/harvester/plugins:/opt/harvester/lib/python3.11/site-packages/pandacommon:/usr/local/lib/python3.11/site-packages
+        exec /usr/local/bin/python3.11 -u -m pandaharvester.harvesterbody.master --foreground
     depends_on:
       panda-server:
         condition: service_healthy
@@ -236,7 +238,7 @@ services:
     environment:
       VIRTUAL_ENV: /opt/harvester
       SITE_PACKAGES_PATH: /opt/harvester/lib/python3.11/site-packages
-      PYTHONPATH: /harvester/plugins:/opt/harvester/lib/python3.11/site-packages/pandacommon
+      PYTHONPATH: "/opt/harvester/lib/python3.11/site-packages:/harvester/plugins:/opt/harvester/lib/python3.11/site-packages/pandacommon:/usr/local/lib/python3.11/site-packages"
       PANDA_URL: ${PANDA_URL:-http://panda-server:80/server/panda}
       PANDA_URL_SSL: ${PANDA_URL_SSL:-http://panda-server:80/server/panda}
       PANDA_AUTH: "None"
