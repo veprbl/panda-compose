@@ -81,12 +81,11 @@ services:
         mkdir -p /var/log/panda/pandacache/jedilog
         chmod -R 777 /var/log/panda/pandacache || true
         if [ -f /opt/panda/sandbox/panda_server-httpd.conf ]; then
-          mv /opt/panda/etc/panda/panda_server-httpd.conf /opt/panda/etc/panda/panda_server-httpd.conf.back || true
-          ln -sf /opt/panda/sandbox/panda_server-httpd.conf /opt/panda/etc/panda/panda_server-httpd.conf
+          cp /opt/panda/sandbox/panda_server-httpd.conf /opt/panda/etc/panda/panda_server-httpd.conf
         fi
         /opt/panda/bin/python /data/panda/process_template.py
         # Also process the httpd config directly since it's not a .template file
-        /opt/panda/bin/python -c "import os, re; content=open('/opt/panda/sandbox/panda_server-httpd.conf').read(); [content.__setitem__('dummy', content.replace('$${'+k+'}',v)) or None for k,v in os.environ.items() if k.startswith('PANDA_SERVER_CONF_')]; open('/opt/panda/etc/panda/panda_server-httpd.conf','w').write(content)"
+        /opt/panda/bin/python -c "import os, re; content=open('/opt/panda/etc/panda/panda_server-httpd.conf').read(); [content.__setitem__('dummy', content.replace('$${'+k+'}',v)) or None for k,v in os.environ.items() if k.startswith('PANDA_SERVER_CONF_')]; open('/opt/panda/etc/panda/panda_server-httpd.conf','w').write(content)"
         # Remove stale lock files left by a previous container run (the writable
         # layer is reused across restarts so these files persist).
         rm -f $${PANDA_LOCK_DIR:-/var/run/panda}/panda_daemon.lock \
@@ -220,9 +219,9 @@ services:
       - /bin/bash
       - -c
       - |
-        dnf install -y python3.11 python3.11-libs python3.11-devel sqlite-devel
+        dnf install -y python3.11 python3.11-libs python3.11-devel sqlite-devel python3.11-pip
         cp /usr/lib64/python3.11/lib-dynload/_sqlite3.cpython-311-x86_64-linux-gnu.so /usr/local/lib/python3.11/lib-dynload/
-        pip install -q 'docker==7.1.0' 'rucio-clients' 'apsw'
+        pip3.11 install -q 'docker==7.1.0' 'rucio-clients' 'apsw'
         mkdir -p /var/log/harvester /var/run/panda /harvester/workers /var/lib/panda
         PYTHONPATH=/opt/harvester/lib/python3.11/site-packages:/harvester/plugins:/opt/harvester/lib/python3.11/site-packages/pandacommon:/usr/local/lib/python3.11/site-packages
         exec /usr/local/bin/python3.11 -u -m pandaharvester.harvesterbody.master --foreground
