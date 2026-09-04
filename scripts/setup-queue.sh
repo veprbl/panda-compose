@@ -95,6 +95,17 @@ psql -v ON_ERROR_STOP=1 -c \
    ON CONFLICT (component) DO NOTHING;"
 echo "JEDI schema version row inserted."
 
+# Step 1c: seed resource_types with permissive SCORE entry so tasks requesting
+# 2000 MB/core can match. Without this, tasks stay resource_type='Undefined'.
+echo "Seeding resource_types..."
+psql -v ON_ERROR_STOP=1 << 'ENDOFSQL'
+INSERT INTO doma_panda.resource_types (resource_name, minrampercore, maxrampercore, maxtime, corecount)
+VALUES ('SCORE', 0, 8192, 86400, 1)
+ON CONFLICT (resource_name) DO UPDATE
+  SET minrampercore = 0, maxrampercore = 8192;
+ENDOFSQL
+echo "resource_types seeded."
+
 # Step 2: register PANDA_COMPOSE_LOCAL queue using the panda user credentials.
 export PGPASSWORD="${PANDA_DB_PASSWORD:-panda_secret}"
 export PGUSER="${PANDA_DB_USER}"
