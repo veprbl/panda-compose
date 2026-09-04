@@ -44,6 +44,10 @@ account = root
 ca_cert = /opt/rucio/etc/rucio_ca.pem
 ```
 
+**Important**: This config is HTTP-only (no `[database]` section). The
+`[database]` section is for server-side only; clients must use the
+HTTPS API.
+
 Copy the Rucio dev stack's self-signed CA cert next to it, then create
 the OpenSSL hash symlink OpenSSL requires for `X509_CERT_DIR` lookups:
 
@@ -52,6 +56,12 @@ cp path/to/rucio_ca.pem config/rucio/rucio_ca.pem
 h=$(openssl x509 -hash -noout -in config/rucio/rucio_ca.pem)
 ln -sf rucio_ca.pem config/rucio/${h}.0
 ```
+
+**Critical**: The hash symlink (e.g., `5fca1cb1.0`) must be installed
+into `/etc/grid-security/certificates/` in the container because
+panda-jedi's environment sets `X509_CERT_DIR=/etc/grid-security/certificates`
+which takes precedence over the config file's `ca_cert` setting. The
+example override handles this via a volume mount.
 
 ## Step 2 — Copy the override example
 
@@ -63,7 +73,19 @@ Compose picks up `docker-compose.override.yml` automatically. Read the
 file's header for what it does and adjust the network name if
 your Rucio dev stack uses a different one.
 
-## Step 3 — Enable RucioStager in the queue config
+## Step 3 — Harvester bootstrap (in docker-compose.yml)
+
+The harvester service's bootstrap command must:
+1. Install `python3.11`, `python3.11-libs`, `python3.11-devel`, `sqlite-devel` (for `_sqlite3` module)
+2. Copy the system `_sqlite3` module to `/usr/local/lib/python3.11/lib-dynload/`
+3. Install `rucio-clients`, `apsw`, `docker` via pip
+4. Use the system Python 3.11 (`/usr/local/bin/python3.11`) which has the `_sqlite3` module
+5. Set `PYTHONPATH` to include `/harvester/plugins` and `/usr/local/lib/python3.11/site-packages`
+
+This is already configured in the base `docker-compose.yml`. See the
+harvester service's `command` section.
+
+## Step 4 — Enable RucioStager in the queue config
 
 Edit `config/harvester/panda_queues.cfg`:
 
@@ -80,23 +102,19 @@ Edit `config/harvester/panda_queues.cfg`:
 
 Replace the shipped `DummyStager` block with the above.
 
-## Step 4 — Install rucio-clients in the harvester container
+Also ensure `submitter` is `DockerSubmitter` and `monitor` is `DockerMonitor`:
 
-Add `rucio-clients` to the harvester service's bootstrap pip install
-line in `docker-compose.yml`. The plugin lazily imports
-`rucio.client.uploadclient.UploadClient` inside `trigger_stage_out()`;
-without the package the stager logs a clean error and every
-stage-out fails.
-
-```yaml
-harvester:
-  command:
-    - /bin/bash
-    - -c
-    - |
-      source /opt/harvester/bin/activate
-      pip install -q 'docker==7.1.0' 'rucio-clients==38.1.0'
-      ...
+```json
+"submitter": {
+    "name": "DockerSubmitter",
+    "module": "docker_submitter",
+    "dockerImage": "alpine:latest",
+    "dockerOptions": "--rm --network=host"
+},
+"monitor": {
+    "name": "DockerMonitor",
+    "module": "docker_monitor"
+}
 ```
 
 ## Step 5 — Bring the stack back up
@@ -124,3 +142,27 @@ See the docstring in `config/harvester/plugins/rucio_stager.py` for
 the plugin's design tradeoffs and gotchas — most notably why it
 authenticates as `root` in the local dev setup and why it uploads
 one file at a time instead of in bulk.
+
+## Troubleshooting
+
+### "No module named 'rucio'"
+The harvester bootstrap didn't install `rucio-clients`. Check the
+harvester logs for the pip install step.
+
+### "SSL: CERTIFICATE_VERIFY_FAILED"
+The Rucio CA hash symlink is missing from `/etc/grid-security/certificates/`
+in the container. Verify the override mounts `config/rucio/5fca1cb1.0`
+to that path.
+
+### "no such table: rses"
+The Rucio client config has a `[database]` section pointing to SQLite.
+Remove the `[database]` section — clients must use HTTP API only.
+
+### Jobs stay in `activated` / harvester doesn't fetch
+- Check `panda_harvester.cfg` has correct `server_api_url = http://panda-compose-panda-server-1:80/api/v1`
+- Verify panda-server is listening on port 80 (not 25080 inside container)
+- Check harvester logs: `docker logs panda-compose-harvester-1`
+
+### RucioStager can't find output files
+The `DockerSubmitter` writes output to `/tmp/harvester_output/worker-<ID>/`.
+Ensure `outputBaseDir` in queue config matches.

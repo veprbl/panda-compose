@@ -7,20 +7,17 @@
 #
 # What it does
 # ------------
-# * Attaches panda-jedi, panda-server, and harvester to the external
+# * Attaches panda-server and harvester to the external
 #   Docker network that Rucio's dev compose creates (default:
 #   `ruciodevnetwork`), so the hostname `rucio` resolves inside the
 #   containers.
 # * Mounts a local `rucio.cfg`, the Rucio CA certificate, and its OpenSSL
-#   hash symlink into the three services so the rucio-clients calls
-#   made by panda-jedi's DDM subprocess, panda-server, and harvester's
+#   hash symlink into the services so the rucio-clients calls
+#   made by panda-server's JEDI DDM subprocess and harvester's
 #   RucioStager plugin all authenticate correctly.
 # * For harvester only, additionally mounts the MOCK-POSIX RSE bytes
 #   (`/tmp/rucio_rse`) read-write and the per-worker output directory
-#   (`/tmp/harvester_output`) read-write, and mounts the RucioStager
-#   plugin file into the plugin dir Harvester scans. See
-#   `config/harvester/plugins/rucio_stager.py` for the plugin's own
-#   docstring which explains the queue-config opt-in.
+#   (`/tmp/harvester_output`) read-write.
 #
 # Prerequisites
 # -------------
@@ -34,17 +31,10 @@
 # 3. `/tmp/rucio_rse` is the MOCK-POSIX RSE data directory the Rucio
 #    dev stack writes to. `/tmp/harvester_output` is a directory the
 #    stager will populate per-worker.
-# 4. The harvester bootstrap command in `docker-compose.yml` must also
-#    install `rucio-clients` so RucioStager can import UploadClient.
+# 4. The harvester bootstrap command in `docker-compose.yml` installs
+#    `rucio-clients` so RucioStager can import UploadClient.
 #    See docs/rucio-integration.md.
 services:
-  panda-jedi:
-    networks: [default, ruciodev]
-    volumes:
-      - ./config/rucio/rucio.cfg:/opt/rucio/etc/rucio.cfg:ro
-      - ./config/rucio/rucio_ca.pem:/opt/rucio/etc/rucio_ca.pem:ro
-      - ./config/rucio/5fca1cb1.0:/etc/grid-security/certificates/5fca1cb1.0:ro
-
   panda-server:
     networks: [default, ruciodev]
     volumes:
@@ -60,10 +50,6 @@ services:
       - ./config/rucio/5fca1cb1.0:/etc/grid-security/certificates/5fca1cb1.0:ro
       - /tmp/rucio_rse:/tmp/rucio_rse:rw
       - /tmp/harvester_output:/tmp/harvester_output:rw
-      - ./config/harvester/plugins/rucio_stager.py:/harvester/plugins/rucio_stager.py:ro
-    environment:
-      RUCIO_HOME: /opt/rucio
-      RUCIO_CONFIG: /opt/rucio/etc/rucio.cfg
 
 networks:
   ruciodev:
