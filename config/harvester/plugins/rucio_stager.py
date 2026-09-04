@@ -163,7 +163,7 @@ class RucioStager(BaseStager):
         # Build a Rucio client bound to our account (the config's default
         # account is 'root', which lacks the write scope).
         try:
-            rucio_client = RucioClient(account=self.rucioAccount)
+            rucio_client = RucioClient(account=self.rucioAccount, ca_cert="/opt/rucio/etc/ca.crt")
         except Exception as exc:
             msg = f"Rucio Client init failed: {exc}"
             tmpLog.error(msg)
@@ -313,11 +313,19 @@ class RucioStager(BaseStager):
         if out_ext:
             for lfn, meta in out_ext.items():
                 # jobParamsExtForOutput scope may come from JEDI as
-                # "user.hermes/user.hermes.rucioout.NNN_out.txt" (scope/dataset
-                # combined). Rucio's actual scope is only the prefix before "/".
+                # "user.hermes:user.hermes.rucioout.NNN_out.txt" (scope:name
+                # combined). Rucio's actual scope is only the prefix before ":".
                 raw_scope = meta.get("scope") or ""
-                scope = raw_scope.split("/", 1)[0] if raw_scope else self._split_scope(lfn)[0]
-                if not scope:
+                # Parse scope from DID format (scope:name or scope/name) if present
+                if ":" in raw_scope:
+                    scope = raw_scope.split(":", 1)[0]
+                elif "/" in raw_scope:
+                    scope = raw_scope.split("/", 1)[0]
+                elif raw_scope and raw_scope != "NULL":
+                    scope = raw_scope
+                else:
+                    scope = self._split_scope(lfn)[0]
+                if not scope or scope == "NULL":
                     scope = self._split_scope(lfn)[0]
                 dataset = meta.get("dataset")
                 if dataset in (None, "", "NULL"):
@@ -342,6 +350,8 @@ class RucioStager(BaseStager):
                 if ds == "NULL":
                     ds = None
                 scope, _ = self._split_scope(lfn)
+                if not scope or scope == "NULL":
+                    scope = self.defaultScope
                 ftype = "log" if lfn == logFile or lfn.endswith(".log.tgz") else "output"
                 plan.append({"lfn": lfn, "type": ftype, "scope": scope, "dataset": ds})
 

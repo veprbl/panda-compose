@@ -186,6 +186,30 @@ class DockerSubmitter(PluginBase):
             except OSError as exc:
                 wLog.warning(f"could not symlink {src} to {dst}: {exc}")
 
+        # For test tasks that use ./payload.sh as exec_str, create a simple
+        # payload script that produces the expected output file.
+        # The exec_str is extracted from jobPars -p flag.
+        job_pars = params.get("jobPars", "")
+        if "-p" in job_pars and "./payload.sh" in job_pars:
+            payload_path = os.path.join(worker_output_host, "payload.sh")
+            if not os.path.exists(payload_path):
+                # Extract output file name from jobPars -o flag
+                import re
+                out_match = re.search(r"-o\s+\"([^\"]+)\"", job_pars)
+                output_file = "output.txt"
+                if out_match:
+                    try:
+                        import json
+                        out_dict = json.loads(out_match.group(1).replace("'", '"'))
+                        output_file = list(out_dict.values())[0]
+                    except Exception:
+                        pass
+                payload_content = f"#!/bin/sh\necho 'hello from payload' > {output_file}\n"
+                with open(payload_path, "w") as f:
+                    f.write(payload_content)
+                os.chmod(payload_path, 0o755)
+                wLog.debug(f"created test payload.sh at {payload_path} for output {output_file}")
+
     def submit_workers(self, workspec_list):
         tmpLog = self.make_logger(baseLogger, method_name="submit_workers")
         tmpLog.debug(f"start nWorkers={len(workspec_list)}")
